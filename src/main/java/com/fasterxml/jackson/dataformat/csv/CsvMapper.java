@@ -309,17 +309,29 @@ public class CsvMapper extends ObjectMapper
      * just defined to be exposed as String tokens).
      */
     public CsvSchema schemaFor(JavaType pojoType) {
-        return _schemaFor(pojoType, _untypedSchemas, false);
+        return _schemaFor(pojoType, _untypedSchemas, false, null);
     }
 
     public final CsvSchema schemaFor(Class<?> pojoType) {
-        return _schemaFor(constructType(pojoType), _untypedSchemas, false);
+        return _schemaFor(constructType(pojoType), _untypedSchemas, false, null);
     }
 
     public final CsvSchema schemaFor(TypeReference<?> pojoTypeRef) {
-        return _schemaFor(constructType(pojoTypeRef.getType()), _untypedSchemas, false);
+        return _schemaFor(constructType(pojoTypeRef.getType()), _untypedSchemas, false, null);
     }
 
+    public CsvSchema schemaFor(JavaType pojoType, Class<?> viewType) {
+        return _schemaFor(pojoType, _untypedSchemas, false, viewType);
+    }
+
+    public final CsvSchema schemaFor(Class<?> pojoType, Class<?> viewType) {
+        return _schemaFor(constructType(pojoType), _untypedSchemas, false, viewType);
+    }
+
+    public final CsvSchema schemaFor(TypeReference<?> pojoTypeRef, Class<?> viewType) {
+        return _schemaFor(constructType(pojoTypeRef.getType()), _untypedSchemas, false, viewType);
+    }
+    
     /**
      * Method that can be used to determine a CSV schema to use for given
      * POJO type, using default serialization settings including ordering.
@@ -328,17 +340,29 @@ public class CsvMapper extends ObjectMapper
      * (especially for numeric types like java.lang.Integer).
      */
     public CsvSchema typedSchemaFor(JavaType pojoType) {
-        return _schemaFor(pojoType, _typedSchemas, true);
+        return _schemaFor(pojoType, _typedSchemas, true, null);
     }
 
     public final CsvSchema typedSchemaFor(Class<?> pojoType) {
-        return _schemaFor(constructType(pojoType), _typedSchemas, true);
+        return _schemaFor(constructType(pojoType), _typedSchemas, true, null);
     }
 
     public final CsvSchema typedSchemaFor(TypeReference<?> pojoTypeRef) {
-        return _schemaFor(constructType(pojoTypeRef.getType()), _typedSchemas, true);
+        return _schemaFor(constructType(pojoTypeRef.getType()), _typedSchemas, true, null);
     }
 
+    public CsvSchema typedSchemaFor(JavaType pojoType, Class<?> viewType) {
+        return _schemaFor(pojoType, _typedSchemas, true, viewType);
+    }
+
+    public final CsvSchema typedSchemaFor(Class<?> pojoType, Class<?> viewType) {
+        return _schemaFor(constructType(pojoType), _typedSchemas, true, viewType);
+    }
+
+    public final CsvSchema typedSchemaFor(TypeReference<?> pojoTypeRef, Class<?> viewType) {
+        return _schemaFor(constructType(pojoTypeRef.getType()), _typedSchemas, true, viewType);
+    }
+    
     /*
     /**********************************************************************
     /* Internal methods
@@ -346,7 +370,7 @@ public class CsvMapper extends ObjectMapper
      */
 
     protected CsvSchema _schemaFor(JavaType pojoType, LRUMap<JavaType,CsvSchema> schemas,
-            boolean typed)
+            boolean typed, Class<?> viewType)
     {
         synchronized (schemas) {
             CsvSchema s = schemas.get(pojoType);
@@ -356,7 +380,7 @@ public class CsvMapper extends ObjectMapper
         }
         final AnnotationIntrospector intr = _deserializationConfig.getAnnotationIntrospector();
         CsvSchema.Builder builder = CsvSchema.builder();
-        _addSchemaProperties(builder, intr, typed, pojoType, null);
+        _addSchemaProperties(builder, intr, typed, pojoType, null, viewType);
         CsvSchema result = builder.build();
         synchronized (schemas) {
             schemas.put(pojoType, result);
@@ -366,7 +390,7 @@ public class CsvMapper extends ObjectMapper
 
     protected void _addSchemaProperties(CsvSchema.Builder builder, AnnotationIntrospector intr,
             boolean typed,
-            JavaType pojoType, NameTransformer unwrapper)
+            JavaType pojoType, NameTransformer unwrapper, Class<?> viewType)
     {
         BeanDescription beanDesc = getSerializationConfig().introspect(pojoType);
         for (BeanPropertyDefinition prop : beanDesc.findProperties()) {
@@ -374,6 +398,22 @@ public class CsvMapper extends ObjectMapper
             if (!prop.couldSerialize()) {
                 continue;
             }
+			
+            // ignore property not containing passed view
+			Class<?>[] propViews = prop.findViews();
+			if (viewType != null && propViews != null) {
+				boolean includeProperty = false;
+				for (Class<?> propView : propViews) {
+					if (propView.isAssignableFrom(viewType)) {
+						includeProperty = true;
+					}
+				}
+				
+				if (!includeProperty) {
+					continue;
+				}
+			}
+			
             // [Issue#15]: handle unwrapped props
             AnnotatedMember m = prop.getPrimaryMember();
             if (m != null) {
@@ -383,7 +423,7 @@ public class CsvMapper extends ObjectMapper
                         nextUnwrapper = NameTransformer.chainedTransformer(unwrapper, nextUnwrapper);
                     }
                     JavaType nextType = m.getType(beanDesc.bindingsForBeanType());
-                    _addSchemaProperties(builder, intr, typed, nextType, nextUnwrapper);
+                    _addSchemaProperties(builder, intr, typed, nextType, nextUnwrapper, viewType);
                     continue;
                 }
             }
